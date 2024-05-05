@@ -88,9 +88,7 @@ class ProfileTransfer:
         driver.find_element("css selector", "#login_login_or_email").send_keys(login)
         driver.find_element("css selector", "#login_password").send_keys(password)
         WebDriverWait(driver, 120).until(
-            EC.presence_of_element_located(
-                ("css selector", "img.image-background--round")
-            )
+            EC.presence_of_element_located(("css selector", "span.avatar"))
         )
 
     def clear_input(self, driver, element):
@@ -760,6 +758,17 @@ class ProfileTransfer:
             driver.execute_script(
                 'await fetch("https://mywebcamroom.com/api/front/models/'
                 + str(id)
+                + '/apps/",{headers:{"content-type":"application/json","sec-fetch-dest":"empty","sec-fetch-mode":"cors","sec-fetch-site":"same-origin"},referrerPolicy:"strict-origin-when-cross-origin",body:JSON.stringify(arguments[0]),method:"POST",mode:"cors",credentials:"include"});',
+                {
+                    "appId": extension["id"],
+                    "csrfNotifyTimestamp": csrfNotify,
+                    "csrfTimestamp": csrfTimestamp,
+                    "csrfToken": csrfToken,
+                },
+            )
+            driver.execute_script(
+                'await fetch("https://mywebcamroom.com/api/front/models/'
+                + str(id)
                 + "/apps/"
                 + str(extension["id"])
                 + '",{body:JSON.stringify(arguments[0])'
@@ -833,7 +842,7 @@ class ProfileTransfer:
         config["my_info"] and self.copy_my_info(driver, modelId)
         config["videos"] and self.download_all_videos(driver, login)
         config["photos"] and self.download_all_photos(driver, login)
-        if config.__contains__("broadcast_settings"):
+        if config["broadcast_settings"]:
             config["broadcast_settings"]["teaser_video"] and self.download_teaser_video(
                 driver, modelId
             )
@@ -905,7 +914,7 @@ class ProfileTransfer:
             )
         except Exception as ex:
             output += f"Photos error\n{str(ex)}\n"
-        if config.__contains__("broadcast_settings"):
+        if config["broadcast_settings"]:
             try:
                 config["broadcast_settings"][
                     "show_activities"
