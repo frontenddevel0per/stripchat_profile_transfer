@@ -10,6 +10,7 @@ from pynput.keyboard import Key, Controller
 import re
 from pprint import pprint
 from seleniumbase import Driver
+import concurrent.futures
 
 
 def split_array(array):
@@ -21,6 +22,17 @@ def split_array(array):
     chunks.insert(0, [array[0]])
 
     return chunks
+
+
+def upload_content(url, path, type, data, cookies_dict):
+    with open(path, "rb") as photo:
+        files = {type: photo}
+        requests.post(
+            url,
+            files=files,
+            data=data,
+            cookies=cookies_dict,
+        )
 
 
 class ProfileTransfer:
@@ -497,66 +509,53 @@ class ProfileTransfer:
                     },
                 )
                 print(ans)
-        driver.get(f"https://mywebcamroom.com/{login}/photos")
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located(("css selector", "li.plus"))
+        # driver.get(f"https://mywebcamroom.com/{login}/photos")
+        # WebDriverWait(driver, 10).until(
+        #     EC.presence_of_element_located(("css selector", "li.plus"))
+        # )
+        # sleep(5)
+        # for i in range(5):
+        #     try:
+        #         see_more_btn = driver.find_element("css selector", ".see-more-button")
+        #         driver.execute_script("arguments[0].click();", see_more_btn)
+        #         sleep(0.5)
+        #     except:
+        #         break
+        new_albums = driver.execute_script(
+            'return await fetch("https://mywebcamroom.com/api/front/v2/users/username/'
+            + login
+            + '/albums?limit=50&offset=0&uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(e=>e.albums);'
         )
-        sleep(5)
-        for i in range(5):
-            try:
-                see_more_btn = driver.find_element("css selector", ".see-more-button")
-                driver.execute_script("arguments[0].click();", see_more_btn)
-                sleep(0.5)
-            except:
-                break
+        executor = concurrent.futures.ThreadPoolExecutor()
+        tasks = []
+        cookies = driver.get_cookies()
+        cookies_dict = {cookie["name"]: cookie["value"] for cookie in cookies}
+        data = {
+            "source": "albums",
+            "csrfNotifyTimestamp": csrfNotify,
+            "csrfTimestamp": csrfTimestamp,
+            "csrfToken": csrfToken,
+        }
         for album in self.model_profile["photos"]:
-            photos_count = driver.execute_script(
-                'return await fetch("https://mywebcamroom.com/api/front/v2/users/username/'
-                + login
-                + '/albums?limit=50&offset=0&uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(e=>{const o=e.albums.filter(e=>"'
-                + album["name"]
-                + '"===e.name)[0];return o.photosCount});'
+            searched_album = list(
+                filter(lambda x: x["name"] == album["name"], new_albums)
             )
-            modified_array = split_array(album["photos"])
+            if len(searched_album) == 0:
+                continue
+            album_id = searched_album[0]["id"]
             album_name = re.sub(r"[^\w_. -]", "_", album["name"])
-            for i in range(0, len(modified_array)):
-                input_str = (
-                    f'"{self.script_location}\\photos\\{album_name}\\{modified_array[0][0]["id"]}.jpg"'
-                    if i == 0
-                    else " ".join([f'"{photo["id"]}"' for photo in modified_array[i]])
+            for photo in album["photos"]:
+                tasks.append(
+                    executor.submit(
+                        upload_content,
+                        url=f"https://mywebcamroom.com/api/front/users/{id}/albums/{album_id}/photos",
+                        path=f"{self.script_location}\\photos\\{album_name}\\{photo["id"]}.jpg",
+                        type="photo",
+                        data=data,
+                        cookies_dict=cookies_dict
+                    )
                 )
-                add_photo_btn = list(
-                    filter(
-                        lambda x: x.find_element(
-                            "css selector", ".user-photos-page__album-name"
-                        ).get_attribute("innerText")
-                        == album["name"],
-                        driver.find_elements(
-                            "css selector", ".user-photos-page__album"
-                        ),
-                    )
-                )[0].find_element("css selector", "li.plus")
-                self.scroll_to_elem(driver, add_photo_btn)
-                sleep(0.5)
-                add_photo_btn.click()
-                sleep(2)
-                self.keyboard.type(input_str)
-                self.keyboard.press(Key.enter)
-                self.keyboard.release(Key.enter)
-                while True:
-                    new_count = driver.execute_script(
-                        'return await fetch("https://mywebcamroom.com/api/front/v2/users/username/'
-                        + login
-                        + '/albums?limit=50&offset=0&uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(e=>{const o=e.albums.filter(e=>"'
-                        + album["name"]
-                        + '"===e.name)[0];return o.photosCount});'
-                    )
-                    if photos_count + len(modified_array[i]) == new_count:
-                        photos_count = new_count
-                        break
-                    else:
-                        sleep(1)
-                        continue
+        concurrent.futures.wait(tasks)
 
     def upload_all_videos(
         self, driver, login, id, csrfNotify, csrfTimestamp, csrfToken
