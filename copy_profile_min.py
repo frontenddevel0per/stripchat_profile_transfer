@@ -11,6 +11,7 @@ import re
 from pprint import pprint
 from seleniumbase import Driver
 import concurrent.futures
+import traceback
 
 
 def split_array(array):
@@ -25,8 +26,8 @@ def split_array(array):
 
 
 def upload_content(url, path, type, data, cookies_dict):
-    with open(path, "rb") as photo:
-        files = {type: photo}
+    with open(path, "rb") as file:
+        files = {type: file}
         requests.post(
             url,
             files=files,
@@ -34,6 +35,56 @@ def upload_content(url, path, type, data, cookies_dict):
             cookies=cookies_dict,
         )
 
+def upload_video(video, path, modelId, cookies_dict, csrfNotify, csrfTimestamp, csrfToken):
+    video_size = os.path.getsize(path)
+    ans1 = requests.post(f"https://mywebcamroom.com/api/front/users/{modelId}/videos/upload-url", data={
+        "csrfNotifyTimestamp": csrfNotify,
+        "csrfTimestamp": csrfTimestamp,
+        "csrfToken": csrfToken,
+        "filename": path.split("\\")[-1],
+        "filesize": video_size
+    },
+    cookies=cookies_dict).json()
+    with open(path, "rb") as videoFile:
+        files = {"file": videoFile}
+        ans2 = requests.post(
+            ans1["url"],
+            files=files,
+            data={
+                "csrfNotifyTimestamp": csrfNotify,
+                "csrfTimestamp": csrfTimestamp,
+                "csrfToken": csrfToken
+            },
+            cookies=cookies_dict,
+        ).json()
+    try:
+        ans3 = requests.post(f"https://mywebcamroom.com/api/front/v2/users/{modelId}/videos",headers={"content-type": "application/json"}, json={
+            "title": path.split("\\")[-1],
+            "accessMode": "free",
+            "coverUrls": [],
+            "cost": 0,
+            "csrfNotifyTimestamp": csrfNotify,
+            "csrfTimestamp": csrfTimestamp,
+            "csrfToken": csrfToken,
+            "details": {},
+            "uploadId": ans2["uploadId"]
+        },
+        cookies=cookies_dict).json()
+        new_video = dict(ans3["video"])
+        new_video["title"] = video["title"]
+        new_video["accessMode"] = (
+            video["accessMode"]
+            if video["accessMode"] != "fanClub"
+            else "paidOrFanClub"
+        )
+        new_video["cost"] = video["cost"]
+        new_video["minFanClubTier"] = video["minFanClubTier"]
+        new_video["csrfNotifyTimestamp"] = csrfNotify
+        new_video["csrfTimestamp"] = csrfTimestamp
+        new_video["csrfToken"] = csrfToken
+        requests.put(f"https://mywebcamroom.com/api/front/v2/users/{modelId}/videos/{new_video["id"]}",json=new_video,cookies=cookies_dict)
+    except:
+        traceback.print_exc()
 
 class ProfileTransfer:
     def __init__(self):
@@ -509,18 +560,6 @@ class ProfileTransfer:
                     },
                 )
                 print(ans)
-        # driver.get(f"https://mywebcamroom.com/{login}/photos")
-        # WebDriverWait(driver, 10).until(
-        #     EC.presence_of_element_located(("css selector", "li.plus"))
-        # )
-        # sleep(5)
-        # for i in range(5):
-        #     try:
-        #         see_more_btn = driver.find_element("css selector", ".see-more-button")
-        #         driver.execute_script("arguments[0].click();", see_more_btn)
-        #         sleep(0.5)
-        #     except:
-        #         break
         new_albums = driver.execute_script(
             'return await fetch("https://mywebcamroom.com/api/front/v2/users/username/'
             + login
@@ -560,79 +599,24 @@ class ProfileTransfer:
     def upload_all_videos(
         self, driver, login, id, csrfNotify, csrfTimestamp, csrfToken
     ):
-        videos = driver.execute_script(
-            'return await fetch("https://mywebcamroom.com/api/front/v2/users/username/'
-            + login
-            + '/videos?uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(e=>e.videos);'
-        )
-        driver.get(f"https://mywebcamroom.com/{login}/videos")
-        self.wait_for_page_load(driver)
-        upload_video_btn = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located(
-                ("css selector", ".user-media-page-header__upload-button")
-            )
-        )
-        driver.execute_script(
-            "Array.from(document.querySelectorAll('.header-notification .close-button')).forEach(e => e.click())"
-        )
+        executor = concurrent.futures.ThreadPoolExecutor()
+        tasks = []
+        cookies = driver.get_cookies()
+        cookies_dict = {cookie["name"]: cookie["value"] for cookie in cookies}
         for video in self.model_profile["videos"]:
-            self.scroll_to_elem(driver, upload_video_btn)
-            WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable(upload_video_btn)
-            )
-            while True:
-                try:
-                    upload_video_btn.click()
-                    break
-                except:
-                    self.scroll_to_elem(driver, upload_video_btn)
-            sleep(1)
-            self.keyboard.type(self.script_location + f'\\videos\\{video["id"]}.mp4')
-            self.keyboard.press(Key.enter)
-            self.keyboard.release(Key.enter)
-            for i in range(120):
-                new_videos = driver.execute_script(
-                    'return await fetch("https://mywebcamroom.com/api/front/v2/users/username/'
-                    + login
-                    + '/videos?uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(e=>e.videos);'
-                )
-                if len(videos) != len(new_videos):
-                    new_video = list(filter(lambda x: x not in videos, new_videos))[0]
-                    new_video["title"] = video["title"]
-                    new_video["accessMode"] = (
-                        video["accessMode"]
-                        if video["accessMode"] != "fanClub"
-                        else "paidOrFanClub"
+            tasks.append(
+                    executor.submit(
+                        upload_video,
+                        video = video,
+                        path = self.script_location + f'\\videos\\{video["id"]}.mp4',
+                        modelId = id,
+                        cookies_dict = cookies_dict,
+                        csrfNotify = csrfNotify,
+                        csrfTimestamp = csrfTimestamp,
+                        csrfToken = csrfToken
                     )
-                    new_video["cost"] = video["cost"]
-                    new_video["minFanClubTier"] = video["minFanClubTier"]
-                    new_video["csrfNotifyTimestamp"] = csrfNotify
-                    new_video["csrfTimestamp"] = csrfTimestamp
-                    new_video["csrfToken"] = csrfToken
-                    for i in range(5):
-                        try:
-                            response = driver.execute_script(
-                                'return await fetch("https://mywebcamroom.com/api/front/v2/users/'
-                                + str(id)
-                                + "/videos/"
-                                + str(new_video["id"])
-                                + '",{headers:{"content-type":"application/json"},body:JSON.stringify(arguments[0]),method:"PUT",mode:"cors",credentials:"include"}).then(res => res.json());',
-                                new_video,
-                            )
-                            print(response)
-                            if response["video"]["title"] == video["title"]:
-                                break
-                        except:
-                            print(new_video)
-                            sleep(2)
-                    videos = new_videos
-                    break
-                else:
-                    sleep(2)
-                    continue
-            driver.execute_script(
-                'document.querySelector(".edit-video-modal-v2__buttons button").click()'
-            )
+                )
+        concurrent.futures.wait(tasks)
 
     def change_show_activities(
         self, driver: Chrome, id, csrfNotify, csrfTimestamp, csrfToken
