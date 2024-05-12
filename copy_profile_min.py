@@ -86,6 +86,14 @@ def upload_video(video, path, modelId, cookies_dict, csrfNotify, csrfTimestamp, 
     except:
         traceback.print_exc()
 
+def upload_panel(path, modelId, data, cookies_dict):
+    if path != "":
+        with open(path, "rb") as photo:
+            files = {"image": photo}
+            requests.post(f"https://mywebcamroom.com/api/front/users/{modelId}/panels", files=files, data=data, cookies=cookies_dict).json()
+    else:
+        requests.post(f"https://mywebcamroom.com/api/front/users/{modelId}/panels", data=data, cookies=cookies_dict).json()
+
 class ProfileTransfer:
     def __init__(self):
         requested_dirs = ["videos", "photos", "panels", "profile"]
@@ -163,6 +171,8 @@ class ProfileTransfer:
         sleep(0.1)
 
     def download_all_videos(self, driver: Chrome, login):
+        executor = concurrent.futures.ThreadPoolExecutor()
+        tasks = []
         videos = driver.execute_script(
             'return await fetch("https://mywebcamroom.com/api/front/v2/users/username/'
             + login
@@ -171,10 +181,15 @@ class ProfileTransfer:
         for video in videos:
             if "Private Show" in video["title"]:
                 continue
-            self.download_video(
-                video["videoUrl"], f"{self.script_location}\\videos\\{video['id']}.mp4"
-            )
             self.model_profile["videos"].append(video)
+            tasks.append(
+                executor.submit(
+                    self.download_video,
+                    url = video["videoUrl"],
+                    file_name = f"{self.script_location}\\videos\\{video['id']}.mp4"
+                )
+            )
+        concurrent.futures.wait(tasks)
 
     def download_all_photos(self, driver: Chrome, login: str):
         albums = driver.execute_script(
@@ -455,6 +470,48 @@ class ProfileTransfer:
                     "csrfToken": csrfToken,
                 },
             )
+        executor = concurrent.futures.ThreadPoolExecutor()
+        tasks = []
+        cookies = driver.get_cookies()
+        cookies_dict = {cookie["name"]: cookie["value"] for cookie in cookies}
+        for panel in self.model_profile["panels"]:
+            data = {
+                "title": panel["title"],
+                "body": panel["body"],
+                "position[column]": panel["position"]["column"],
+                "position[order]": panel["position"]["order"],
+                "csrfNotifyTimestamp": csrfNotify,
+                "csrfTimestamp": csrfTimestamp,
+                "csrfToken": csrfToken,
+            }
+            tasks.append(
+                executor.submit(
+                    upload_panel,
+                    path="" if panel["imageUrl"] == "" else f"{self.script_location}\\panels\\{panel['id']}.jpg",
+                    modelId = id,
+                    data=data,
+                    cookies_dict=cookies_dict
+                )
+            )
+        concurrent.futures.wait(tasks)
+        '''panels = driver.execute_script(
+            'return await fetch("https://mywebcamroom.com/api/front/users/'
+            + str(id)
+            + '/panels?uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(p=>p.panels);'
+        )
+        for panel in panels:
+            driver.execute_script(
+                'await fetch("https://mywebcamroom.com/api/front/users/'
+                + str(id)
+                + "/panels/"
+                + str(panel["id"])
+                + '",{headers:{"content-type":"application/json"},body:JSON.stringify(arguments[0]),method:"DELETE",mode:"cors",credentials:"include"});',
+                {
+                    "csrfNotifyTimestamp": csrfNotify,
+                    "csrfTimestamp": csrfTimestamp,
+                    "csrfToken": csrfToken,
+                },
+            )
         driver.get(f"https://mywebcamroom.com/{login}/profile")
         addPanelBtn = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located(
@@ -490,7 +547,7 @@ class ProfileTransfer:
             driver.execute_script(
                 "document.querySelector('.modal-body button[type=\"submit\"]').click()"
             )
-            sleep(1)
+            sleep(1)'''
 
     def upload_background(self, driver: Chrome, login, id):
         if self.model_profile["background"] == False:
