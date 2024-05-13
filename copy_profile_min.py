@@ -28,12 +28,12 @@ def split_array(array):
 def upload_content(url, path, type, data, cookies_dict):
     with open(path, "rb") as file:
         files = {type: file}
-        requests.post(
+        ans = requests.post(
             url,
             files=files,
             data=data,
             cookies=cookies_dict,
-        )
+        ).json()
 
 def upload_video(video, path, modelId, cookies_dict, csrfNotify, csrfTimestamp, csrfToken):
     video_size = os.path.getsize(path)
@@ -450,7 +450,7 @@ class ProfileTransfer:
         save_btn.click()"""
 
     def add_panels(
-        self, driver: Chrome, login, id, csrfNotify, csrfTimestamp, csrfToken
+        self, driver: Chrome, id, csrfNotify, csrfTimestamp, csrfToken
     ):
         panels = driver.execute_script(
             'return await fetch("https://mywebcamroom.com/api/front/users/'
@@ -494,108 +494,53 @@ class ProfileTransfer:
                 )
             )
         concurrent.futures.wait(tasks)
-        '''panels = driver.execute_script(
-            'return await fetch("https://mywebcamroom.com/api/front/users/'
-            + str(id)
-            + '/panels?uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(p=>p.panels);'
-        )
-        for panel in panels:
-            driver.execute_script(
-                'await fetch("https://mywebcamroom.com/api/front/users/'
-                + str(id)
-                + "/panels/"
-                + str(panel["id"])
-                + '",{headers:{"content-type":"application/json"},body:JSON.stringify(arguments[0]),method:"DELETE",mode:"cors",credentials:"include"});',
-                {
-                    "csrfNotifyTimestamp": csrfNotify,
-                    "csrfTimestamp": csrfTimestamp,
-                    "csrfToken": csrfToken,
-                },
-            )
-        driver.get(f"https://mywebcamroom.com/{login}/profile")
-        addPanelBtn = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located(
-                ("css selector", "button.profile-panel-add-btn")
-            )
-        )
-        self.scroll_to_elem(driver, addPanelBtn)
-        for panel in self.model_profile["panels"]:
-            addPanelBtn.click()
-            sleep(1)
-            titleTextarea = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable(
-                    ("css selector", 'textarea[id="panel_title_textarea_id"]')
-                )
-            )
-            panel["title"] != "" and titleTextarea.send_keys(panel["title"])
-            panel["body"] != "" and driver.find_element(
-                "css selector", 'textarea[id="panel_body_textarea_id"]'
-            ).send_keys(panel["body"])
-            if panel["imageUrl"] != "":
-                driver.find_element(
-                    "css selector", 'button[id="panel_image_file_input_id"]'
-                ).click()
-                sleep(2)
-                self.keyboard.type(f"{self.script_location}\\panels\\{panel['id']}.jpg")
-                self.keyboard.press(Key.enter)
-                self.keyboard.release(Key.enter)
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located(
-                        ("css selector", "div.panel-image-preview-small img")
-                    )
-                )
-            driver.execute_script(
-                "document.querySelector('.modal-body button[type=\"submit\"]').click()"
-            )
-            sleep(1)'''
 
-    def upload_background(self, driver: Chrome, login, id):
+    def upload_background(self, driver: Chrome, id, csrfNotify, csrfTimestamp, csrfToken):
         if self.model_profile["background"] == False:
             return
-        background = driver.execute_script(
-            'return await fetch("https://mywebcamroom.com/api/front/users/'
-            + str(id)
-            + '/intros/latest?uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json());'
-        )
-        mode = (
-            "Upload"
-            if background == []
-            or background["type"] != self.model_profile["background"]
-            else "Update"
-        )
-        driver.get(f"https://mywebcamroom.com/{login}/profile")
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable(
-                ("css selector", "button.profile-cover-dropdown__button")
-            )
-        ).click()
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located(
-                ("css selector", "button.profile-cover-dropdown__action")
-            )
-        )
-        sleep(1)
-        list(
-            filter(
-                lambda button: button.get_attribute("innerText")
-                == f"{mode} {'Image' if self.model_profile['background'] == 'image' else 'Video'}",
-                driver.find_elements("css selector", ".profile-cover-dropdown__action"),
-            )
-        )[0].click()
-        sleep(2)
-        self.keyboard.type(
-            f"{self.script_location}\\profile\\background.{'jpg' if self.model_profile['background'] == 'image' else 'mp4'}"
-        )
-        self.keyboard.press(Key.enter)
-        self.keyboard.release(Key.enter)
-        for i in range(30):
-            if background != driver.execute_script(
-                'return await fetch("https://mywebcamroom.com/api/front/users/'
-                + str(id)
-                + '/intros/latest?uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json());'
-            ):
-                break
-            sleep(1)
+        cookies = driver.get_cookies()
+        cookies_dict = {cookie["name"]: cookie["value"] for cookie in cookies}
+        if self.model_profile["background"] == "image":
+            data = {
+                "userId": id,
+                "type": "image",
+                "csrfNotifyTimestamp": csrfNotify,
+                "csrfTimestamp": csrfTimestamp,
+                "csrfToken": csrfToken,
+            }
+            upload_content(f"https://mywebcamroom.com/api/front/users/{id}/intros", f"{self.script_location}\\profile\\background.jpg", "photo", data, cookies_dict)
+        else:
+            path = f"{self.script_location}\\profile\\background.mp4"
+            video_size = os.path.getsize(path)
+            ans1 = requests.post(f"https://mywebcamroom.com/api/front/users/{id}/videos/upload-url", data={
+                "csrfNotifyTimestamp": csrfNotify,
+                "csrfTimestamp": csrfTimestamp,
+                "csrfToken": csrfToken,
+                "filename": path.split("\\")[-1],
+                "filesize": video_size
+            },
+            cookies=cookies_dict).json()
+            with open(path, "rb") as videoFile:
+                files = {"file": videoFile}
+                ans2 = requests.post(
+                    ans1["url"],
+                    files=files,
+                    data={
+                        "csrfNotifyTimestamp": csrfNotify,
+                        "csrfTimestamp": csrfTimestamp,
+                        "csrfToken": csrfToken
+                    },
+                    cookies=cookies_dict,
+                ).json()
+            requests.post(f"https://mywebcamroom.com/api/front/users/{id}/intros", data={
+                "csrfNotifyTimestamp": csrfNotify,
+                "csrfTimestamp": csrfTimestamp,
+                "csrfToken": csrfToken,
+                "uploadVideoId": ans2["uploadId"],
+                "type": "video",
+                "userId": id
+            },
+            cookies=cookies_dict)
 
     def upload_all_photos(
         self, driver: Chrome, login, id, csrfNotify, csrfTimestamp, csrfToken
@@ -654,7 +599,7 @@ class ProfileTransfer:
         concurrent.futures.wait(tasks)
 
     def upload_all_videos(
-        self, driver, login, id, csrfNotify, csrfTimestamp, csrfToken
+        self, driver, id, csrfNotify, csrfTimestamp, csrfToken
     ):
         executor = concurrent.futures.ThreadPoolExecutor()
         tasks = []
@@ -715,40 +660,15 @@ class ProfileTransfer:
             ),
         )
 
-    def change_cover_image(self, driver, login, id):
-        coverUrl = driver.execute_script(
-            'return await fetch("https://mywebcamroom.com/api/front/v2/config?uniq=",{mode:"cors",credentials:"include"}).then(n=>n.json()).then(n=>n.data.user.sourcePreviewUrl);'
-        )
-        driver.get(f"https://mywebcamroom.com/{login}")
-        element = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable(
-                ("css selector", 'div[data-nav-item="information"]')
-            )
-        )
-        driver.execute_script("arguments[0].click()", element)
-        uploadBtn = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable(
-                (
-                    "css selector",
-                    "button.cover-picture-action-button",
-                )
-            )
-        )
-        self.scroll_to_elem(driver, uploadBtn)
-        uploadBtn.click()
-        sleep(2)
-        self.keyboard.type(self.script_location + f"\\profile\\cover_image.jpg")
-        self.keyboard.press(Key.enter)
-        self.keyboard.release(Key.enter)
-        for i in range(60):
-            if coverUrl != driver.execute_script(
-                'return await fetch("https://mywebcamroom.com/api/front/v2/config?uniq=",{mode:"cors",credentials:"include"}).then(n=>n.json()).then(n=>n.data.user.sourcePreviewUrl);'
-            ):
-                break
-            else:
-                sleep(2)
-        else:
-            print("Too long wait for message that new video is uploaded")
+    def change_cover_image(self, driver, id, csrfNotify, csrfTimestamp, csrfToken):
+        cookies = driver.get_cookies()
+        cookies_dict = {cookie["name"]: cookie["value"] for cookie in cookies}
+        data = {
+            "csrfNotifyTimestamp": csrfNotify,
+            "csrfTimestamp": csrfTimestamp,
+            "csrfToken": csrfToken,
+        }
+        upload_content(f"https://mywebcamroom.com/api/front/users/{id}", f"{self.script_location}\\profile\\cover_image.jpg", "preview", data, cookies_dict)
 
     def change_record_settings(
         self, driver: Chrome, id, csrfNotify, csrfTimestamp, csrfToken
@@ -822,46 +742,42 @@ class ProfileTransfer:
                 },
             )
 
-    def upload_teaser(self, driver: Chrome, login, id):
+    def upload_teaser(self, driver: Chrome, id, csrfNotify, csrfTimestamp, csrfToken):
         if self.model_profile["broadcast_settings"]["teaser"] == False:
             return
-        teaserUrl = driver.execute_script(
-            'return await fetch("https://mywebcamroom.com/api/front/users/'
-            + str(id)
-            + '?uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(e=>e?.teaser?.url);'
-        )
-        driver.get(f"https://mywebcamroom.com/{login}")
-        element = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable(
-                ("css selector", 'div[data-nav-item="information"]')
-            )
-        )
-        driver.execute_script("arguments[0].click()", element)
-        uploadBtn = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable(
-                (
-                    "css selector",
-                    "button.teaser-upload-button, div.teaser-uploader-player__actions button.cover-picture-action-button",
-                )
-            )
-        )
-        self.scroll_to_elem(driver, uploadBtn)
-        uploadBtn.click()
-        sleep(2)
-        self.keyboard.type(self.script_location + f"\\videos\\teaser.mp4")
-        self.keyboard.press(Key.enter)
-        self.keyboard.release(Key.enter)
-        for i in range(120):
-            if teaserUrl != driver.execute_script(
-                'return await fetch("https://mywebcamroom.com/api/front/users/'
-                + str(id)
-                + '?uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(e=>e?.teaser?.url);'
-            ):
-                break
-            else:
-                sleep(2)
-        else:
-            print("Too long wait for message that new video is uploaded")
+        cookies = driver.get_cookies()
+        cookies_dict = {cookie["name"]: cookie["value"] for cookie in cookies}
+        path = f"{self.script_location}\\videos\\teaser.mp4"
+        video_size = os.path.getsize(path)
+        ans1 = requests.post(f"https://mywebcamroom.com/api/front/users/{id}/videos/upload-url", data={
+            "csrfNotifyTimestamp": csrfNotify,
+            "csrfTimestamp": csrfTimestamp,
+            "csrfToken": csrfToken,
+            "filename": path.split("\\")[-1],
+            "filesize": video_size
+        },
+        cookies=cookies_dict).json()
+        with open(path, "rb") as videoFile:
+            files = {"file": videoFile}
+            ans2 = requests.post(
+                ans1["url"],
+                files=files,
+                data={
+                    "csrfNotifyTimestamp": csrfNotify,
+                    "csrfTimestamp": csrfTimestamp,
+                    "csrfToken": csrfToken
+                },
+                cookies=cookies_dict,
+            ).json()
+        requests.post(f"https://mywebcamroom.com/api/front/users/{id}/videos", data={
+            "csrfNotifyTimestamp": csrfNotify,
+            "csrfTimestamp": csrfTimestamp,
+            "csrfToken": csrfToken,
+            "uploadId": ans2["uploadId"],
+            "type": "teaser",
+            "title": "teaser"
+        },
+        cookies=cookies_dict)
 
     def start_transfer(self, login, password, login2, password2, config):
         driver = Driver(
@@ -918,7 +834,6 @@ class ProfileTransfer:
             try:
                 config["my_info"]["panels"] and self.add_panels(
                     driver,
-                    login2,
                     modelId,
                     configData["csrfNotifyTimestamp"],
                     configData["csrfTimestamp"],
@@ -928,14 +843,17 @@ class ProfileTransfer:
                 output += f"Panels error\n{str(ex)}\n"
             try:
                 config["my_info"]["background"] and self.upload_background(
-                    driver, login2, modelId
+                    driver,
+                    modelId,
+                    configData["csrfNotifyTimestamp"],
+                    configData["csrfTimestamp"],
+                    configData["csrfToken"],
                 )
             except Exception as ex:
                 output += f"Background error\n{str(ex)}\n"
         try:
             config["videos"] and self.upload_all_videos(
                 driver,
-                login2,
                 modelId,
                 configData["csrfNotifyTimestamp"],
                 configData["csrfTimestamp"],
@@ -969,7 +887,11 @@ class ProfileTransfer:
                 output += f"Show activities error\n{str(ex)}\n"
             try:
                 config["broadcast_settings"]["teaser_video"] and self.upload_teaser(
-                    driver, login2, modelId
+                    driver,
+                    modelId,
+                    configData["csrfNotifyTimestamp"],
+                    configData["csrfTimestamp"],
+                    configData["csrfToken"],
                 )
             except Exception as ex:
                 output += f"Teaser video transfer error\n{str(ex)}\n"
@@ -985,7 +907,11 @@ class ProfileTransfer:
                 output += f"Prices error\n{str(ex)}\n"
             try:
                 config["broadcast_settings"]["cover_image"] and self.change_cover_image(
-                    driver, login2, modelId
+                    driver,
+                    modelId,
+                    configData["csrfNotifyTimestamp"],
+                    configData["csrfTimestamp"],
+                    configData["csrfToken"]
                 )
             except Exception as ex:
                 output += f"Cover image error\n{str(ex)}\n"
