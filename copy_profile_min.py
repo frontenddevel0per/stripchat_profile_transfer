@@ -293,9 +293,10 @@ class ProfileTransfer:
                 "interests",
             ]
         }
-        response = requests.get(data["user"]["avatarUrl"])
-        with open(f"{self.script_location}\\profile\\avatar.jpg", "wb") as f:
-            f.write(response.content)
+        if "https:" in data["user"]["avatarUrl"]:
+            response = requests.get(data["user"]["avatarUrl"])
+            with open(f"{self.script_location}\\profile\\avatar.jpg", "wb") as f:
+                f.write(response.content)
         background = driver.execute_script(
             'return await fetch("https://mywebcamroom.com/api/front/users/'
             + str(id)
@@ -320,6 +321,8 @@ class ProfileTransfer:
             + '/panels?uniq=",{mode:"cors",credentials:"include"}).then(e=>e.json()).then(p=>p.panels);'
         )
         for panel in self.model_profile["panels"]:
+            if "https:" not in panel["imageUrl"]:
+                continue
             response = requests.get(panel["imageUrl"])
             with open(f"{self.script_location}\\panels\\{panel['id']}.jpg", "wb") as f:
                 f.write(response.content)
